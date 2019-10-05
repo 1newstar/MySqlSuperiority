@@ -76,7 +76,7 @@
 
 > （1）MYSQL逻辑分层 ：连接层 服务层 引擎层 存储层
 >
-> ![逻辑分层](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\MySQL逻辑分层.png)
+> ![逻辑分层](./MySQL逻辑分层.png)
 >
 > - InnoDB(默认) ：事务优先 （适合高并发操作；行锁）
 > -  MyISAM ：性能优先  （表锁）
@@ -132,11 +132,11 @@
 >
 > （1）B树索引：
 >
-> ![B树索引](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\B树索引.png)
+> ![B树索引](B树索引.png)
 >
 > （2）索引的原理
 >
-> ![BTree检索原理](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\BTree检索原理.png)
+> ![BTree检索原理](BTree检索原理.png)
 >
 > - 索引的弊端：
 >
@@ -253,7 +253,7 @@
 >
 > （1）准备数据
 >
-> ![表结构](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\表结构.png)
+> ![表结构](表结构.png)
 >
 > SQL语句：
 >
