@@ -602,6 +602,7 @@ and t.tid = (select c.tid from course c where cname = 'sql') ;
 >      drop index idx_a1 on test02;
 >      drop index idx_a2 on test02;
 >      drop index idx_a3 on test02;
+>      ```
 >
 >
 >      alter table test02 add index idx_a1_a2_a3 (a1,a2,a3) ;
@@ -1699,7 +1700,8 @@ start slave ;
 
 
 
-视频地址：https://www.bilibili.com/watchlater/#/av29072634/p9
+- [视频记录](https://www.bilibili.com/watchlater/#/av29072634/p9)
+- [优秀笔记地址](https://zhuanlan.zhihu.com/p/81922471?utm_source=qq&utm_medium=social&utm_oi=829272701691658240)
 
 
 
