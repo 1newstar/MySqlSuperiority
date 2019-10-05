@@ -1,4 +1,667 @@
-### 6. 优化案例
+### 1. MySql版本
+
+> - 5.x:
+> - 5.0-5.1:早期产品的延续，升级维护
+> - 5.4 - 5.x :  MySQL整合了三方公司的新存储引擎 （推荐5.5）
+
+#### （1）基本操作
+
+> - 启动mysql应用： service mysql start
+> - 关闭： service mysql stop
+> - 重启： service mysql restart
+>
+> 注意：
+>
+> ```txt
+> 在计算机reboot后 登陆MySQL :  mysql
+> 	可能会报错：   "/var/lib/mysql/mysql.sock不存在"  
+> 	--原因：是Mysql服务没有启动
+> 解决办法：
+>     （1） 启动服务： 1.每次使用前 手动启动服务   /etc/init.d/mysql start
+>     （2）开机自启   chkconfig mysql on     ,  chkconfig mysql off    
+>     （3）检查开机是否自动启动： ntsysv	
+> ```
+>
+> - 设置密码：给mysql 的超级管理员root 增加密码：/usr/bin/mysqladmin -u root password root
+> - 登录：mysql -u root -p
+>
+> 数据库存放目录：
+>
+> ```txt
+> ps -ef|grep mysql  可以看到：
+> 		数据库目录：     datadir=/var/lib/mysql 
+> 		pid文件目录： --pid-file=/var/lib/mysql/bigdata01.pid
+>
+> 		MySQL核心目录：
+> 			/var/lib/mysql :mysql 安装目录
+> 			/usr/share/mysql:  配置文件
+> 			/usr/bin：命令目录（mysqladmin、mysqldump等）
+> 			/etc/init.d/mysql启停脚本
+> MySQL配置文件
+>       my-huge.cnf	高端服务器  1-2G内存
+>       my-large.cnf   中等规模
+>       my-medium.cnf  一般
+>       my-small.cnf   较小
+>       但是，以上配置文件mysql默认不能识别，默认只能识别 /etc/my.cnf
+>       采用 my-huge.cnf ：
+>       cp /usr/share/mysql/my-huge.cnf /etc/my.cnf
+>       注意：mysql5.5默认配置文件/etc/my.cnf；Mysql5.6 默认配置文件/etc/mysql-default.cnf
+> ```
+
+#### （2）mysql字符编码
+
+> ```mysql
+> sql  :  show variables like '%char%' ;
+> 		可以发现部分编码是 latin,需要统一设置为utf-8
+> 		设置编码：
+> 		vi /etc/my.cnf:
+> 		[mysql]
+> 		default-character-set=utf8
+> 		[client]
+> 		default-character-set=utf8
+> 		
+> 		[mysqld]
+> 		character_set_server=utf8
+> 		character_set_client=utf8
+> 		collation_server=utf8_general_ci
+>
+> 	重启Mysql:  service mysql restart
+> 		sql  :  show variables like '%char%' ;
+> 注意事项：修改编码 只对“之后”创建的数据库生效，因此 我们建议 在mysql安装完毕后，第一时间 统一编码。
+> ```
+>
+> 小提示：mysql:清屏    ctrl+L    , system clear
+
+### 2. mysql原理
+
+> （1）MYSQL逻辑分层 ：连接层 服务层 引擎层 存储层
+>
+> ![逻辑分层](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\MySQL逻辑分层.png)
+>
+> - InnoDB(默认) ：事务优先 （适合高并发操作；行锁）
+> -  MyISAM ：性能优先  （表锁）
+>
+> （2）引擎
+>
+> - 查询数据库引擎：  支持哪些引擎？ show engines ;
+> - 查看当前使用的引擎   show variables like '%storage_engine%' ;
+>
+> （3）创建表的时候指定引擎和默认字符编码
+>
+> ```mysql
+> create table tb(
+> 		id int(4) auto_increment ,
+> 		name varchar(5),
+> 		dept varchar(5) ,
+> 		primary key(id)		
+> 	)ENGINE=MyISAM AUTO_INCREMENT=1
+> 	 DEFAULT CHARSET=utf8   ;
+> ```
+
+### 3. SQL优化
+
+​    **优化原因：**
+
+​          性能低、执行时间太长、等待时间太长、SQL语句欠佳（连接查询）、索引失效、服务器参数设置不合理（缓冲、线程数）
+
+#### （1）SQL语句
+
+> - 编写过程
+>
+> ```mysql
+> select dinstinct  ..from  ..join ..on ..where ..group by ...having ..order by ..limit ..
+> ```
+>
+> - 解析过程
+>
+> ```mysql
+> from .. on.. join ..where ..group by ....having ...select dinstinct ..order by limit ...
+> ```
+
+#### （2）SQL优化本质
+
+​     **SQL优化主要是在优化索引**
+
+> - 索引（比喻）：相当于书的目录
+>
+> - 索引（概述）：
+>
+>   index索引是帮助mysql高效获取数据的数据结构。索引的数据结构（树：B树(默认)、Hash树...）
+>
+> 举例：
+>
+> （1）B树索引：
+>
+> ![B树索引](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\B树索引.png)
+>
+> （2）索引的原理
+>
+> ![BTree检索原理](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\BTree检索原理.png)
+>
+> - 索引的弊端：
+>
+>   1.索引本身很大， 可以存放在内存/硬盘（通常为 硬盘）
+>   2.索引不是所有情况均适用： a.少量数据  b.频繁更新的字段   c.很少使用的字段
+>   3.索引会降低增删改的效率（增删改  查）
+>
+> - 索引的优势：
+>
+>   1.提高查询效率（降低IO使用率）
+>
+>   2.降低CPU使用率 （...order by age desc,因为 B树索引 本身就是一个 好排序的结构，因此在排序时  可以直接使用）
+>
+> MySQL执行流程推荐：
+>
+> [MySQL总体架构--->查询执行流程--->语句执行顺序](https://www.cnblogs.com/annsshadow/p/5037667.html)
+
+### 4. 索引
+
+#### （1）分类
+
+> - 主键索引：不能重复  Id、不是null
+> - 唯一索引：不能重复  Id、可以是null
+> - 单值索引：单列  age、一个表可以多个单值索引,name。
+> - 复合索引：多个列构成的索引 （相当于 二级目录 ：  z: zhao）  (name,age)   (a,b,c,d,...,n)
+
+#### （2）创建索引
+
+> - **方式一**
+>
+> `create 索引类型  索引名  on 表(字段)`
+>
+> - 下面索引举例参照上面的tb表如下：
+>
+> a. 单值索引
+>
+> `create index   dept_index on  tb(dept);`
+>
+> b. 唯一索引
+>
+> `create unique index name_index on tb(name)`
+>
+> c. 复合索引
+>
+> `create index dept_name_index on tb(dept,name)`
+>
+> - **方式二**
+>
+> alter table 表名 索引类型  索引名（字段）
+>
+> a. 单值索引
+>
+> `alter table tb add index dept_index(dept);`
+>
+> b. 唯一索引
+>
+> `alter table tb add unique index name_index(name)`
+>
+> c. 复合索引
+>
+> `alter table tb add index dept_name_index(dept,name);`
+>
+> **注意：**如果一个字段是primary key,则改动字段默认就是  主键索引
+
+#### （2）删除索引
+
+> ```mysql
+> drop index 索引名 on 表名 ;
+> drop index name_index on tb ;
+> ```
+
+#### （3）查询索引
+
+> ```mysql
+> show index from 表名 ;
+> show index from 表名 \G
+> ```
+>
+> **注意：**
+>
+> - 只有DML(数据库管理语言),数据库的增删改需要commit
+> - 而DDL数据库定义语言，不需要commit,他会自动提交
+
+### 5. SQL性能问题
+
+#### （1）瓶颈：
+
+> a. 分析SQL的执行计划：**explain**,可以模拟SQL优化器执行SQL语句，从而让开发人员 知道自己编写的SQL状况
+>
+> b. MySQL查询优化其会干扰我们的优化
+>
+> **优化方法:**官网：https://dev.mysql.com/doc/refman/5.5/en/optimization.html
+
+#### （2）查询执行计划
+
+> -   explain +SQL语句
+>
+> `explain select * from tb;`
+>
+> - **explain各个字段的意义描述**
+>
+> ```mysql
+> id : 编号				
+> select_type ：查询类型
+> table ：表
+> type   ：类型
+> possible_keys ：预测用到的索引 
+> key  ：实际使用的索引
+> key_len ：实际使用索引的长度     
+> ref  :表之间的引用
+> rows ：通过索引查询到的数据量 
+> Extra     :额外的信息
+> ```
+>
+> （1）准备数据
+>
+> ![表结构](F:\MySqlProject\MySqlSuperiority\SQL优化笔记\表结构.png)
+>
+> SQL语句：
+>
+> ```mysql
+> create table course
+> (
+> cid int(3),
+> cname varchar(20),
+> tid int(3)
+> );
+> create table teacher
+> (
+> tid int(3),
+> tname varchar(20),
+> tcid int(3)
+> );
+>
+> create table teacherCard
+> (
+> tcid int(3),
+> tcdesc varchar(200)
+> );
+> ```
+>
+> 插入数据：
+>
+> ```mysql
+> insert into course values(1,'java',1);
+> insert into course values(2,'html',1);
+> insert into course values(3,'sql',2);
+> insert into course values(4,'web',3);
+>
+> insert into teacher values(1,'tz',1);
+> insert into teacher values(2,'tw',2);
+> insert into teacher values(3,'tl',3);
+>
+> insert into teacherCard values(1,'tzdesc') ;
+> insert into teacherCard values(2,'twdesc') ;
+> insert into teacherCard values(3,'tldesc') ;
+> ```
+
+#### （3）ID字段
+
+> - 查询课程编号为2  或 教师证编号为3  的老师信息
+> - explain +sql:
+>
+> 1. id: id值相同，从上往下 顺序执行。\
+>
+>    ​       t3-tc3-c4
+>
+>    ​      tc3--c4-t6
+>
+> 2. 表的执行顺序  因数量的个数改变而改变的原因： 笛卡儿积
+>
+>    ```pascal
+>        a 	 b    c
+>    	4	3	 2   =  	 2*3=6 * 4   =24
+>    						3*4=12* 2   =24    
+>    ```
+>
+>    **分析**
+>
+>    （1）当id相同时，数据小的表 优先查询；（因为查询是借助内存，当然内存放的数据越小越好）
+>
+>    （2）当id值不同：id值越大越优先查询 (本质：在嵌套子查询时，先查内层 再查外层)
+>
+> - 查询教授SQL课程的老师的描述（desc）
+>
+>   ```mysql
+>   explain select tc.tcdesc from teacherCard tc,course c,teacher t where c.tid = t.tid
+>   and t.tcid = tc.tcid and c.cname = 'sql' ;
+>   ```
+>
+> - 将以上 多表查询 转为子查询形式：
+>
+>   ```mysql
+>   explain select tc.tcdesc from teacherCard tc where tc.tcid = 
+>   (select t.tcid from teacher t where  t.tid =  
+>   	(select c.tid from course c where c.cname = 'sql')
+>   );
+>   ```
+>
+> - 子查询+多表： 
+>
+>   ```mysql
+>   explain select t.tname ,tc.tcdesc from teacher t,teacherCard tc where t.tcid= tc.tcid
+>   and t.tid = (select c.tid from course c where cname = 'sql') ;
+>   ```
+>
+> （3）id值有相同，又有不同： id值越大越优先；id值相同，从上往下 顺序执行
+
+#### （4）select_type:查询类型
+
+> - primary:包含子查询SQL中的 主查询 （最外层）
+> - subquery：包含子查询SQL中的 子查询 （非最外层）
+> - simple:简单查询（不包含子查询、union）
+> - derived:衍生查询(使用到了临时表)
+>
+> （1）方式一：a.在from子查询中只有一张表
+>
+> ```mysql
+> explain select  cr.cname 	from ( select * from course where tid in (1,2) ) cr ;
+> ```
+>
+> （2）b.在from子查询中， 如果有table1 union table2 ，则table1 就是derived,table2就是union
+>
+> ```mysql
+> explain select  cr.cname 	from ( select * from course where tid = 1  union select * from course where tid = 2 ) cr ;
+> ```
+>
+> **知识补充**
+>
+> - 主要用于连接查询，联合两个数据表，把两个表中所有的字段合成一张大表。
+>
+> - UNION 指令的目的：将两个SQL的结果集合并起来，从这个角度看，union 跟join 有些类似，因为这两个指令都可以由多个表中截取资料
+>
+> -  UNION 的一个限制是两个 SQL 语句所产生的栏位需要是同样的资料种类。另外，当我们用 UNION这个指令时，我们只会看到不同的资料值 (类似 select distinct)。
+>
+>   ```mysql
+>   UNION 的语法如下：
+>   	[SQL 语句 1]
+>   	UNION
+>   	[SQL 语句 2]
+>   ```
+>
+> - union:上例
+>
+> - union result :告知开发人员，那些表之间存在union查询
+
+#### （5）type:索引类型
+
+       ```mysql
+system > const > eq_ref > ref > fulltext > ref_or_null > index_merge > unique_subquery > index_subquery > range > index > ALL
+       ```
+
+- 优化一般级别：
+
+  ```mysql
+  system>const>eq_ref>ref>range>index>all   ，要对type进行优化的前提：有索引
+
+  其中：system,const只是理想情况；实际能达到 ref>range
+  ```
+
+- system（忽略）: 只有一条数据的系统表 ；或 衍生表只有一条数据的主查询
+
+  ```mysql
+  create table test01
+  (
+  	tid int(3),
+  	tname varchar(20)
+  );
+
+  insert into test01 values(1,'a') ;
+  commit;
+  ```
+
+- (1) 增加索引
+
+  ```mysql
+  alter table test01 add constraint tid_pk primary key(tid) ;
+  explain select * from (select * from test01 )t where tid =1 ;
+  ```
+
+- const：仅仅能查到一条数据的SQL ,用于Primary key 或unique索引  （类型 与索引类型有关）
+
+  ```mysql
+  explain select tid from test01 where tid =1 ;
+  alter table test01 drop primary key ;
+  create index test01_index on test01(tid) ;
+  ```
+
+- eq_ref:唯一性索引：对于每个索引键的查询，返回匹配唯一行数据（有且只有1个，不能多 、不能0）
+
+  ```mysql
+  select ... from ..where name = ... .常见于唯一索引 和主键索引。
+
+  alter table teacherCard add constraint pk_tcid primary key(tcid);
+  alter table teacher add constraint uk_tcid unique index(tcid) ;
+
+  explain select t.tcid from teacher t,teacherCard tc where t.tcid = tc.tcid ;
+  ```
+
+  **注意**
+
+  以上SQL，用到的索引是 t.tcid,即teacher表中的tcid字段；
+  如果teacher表的数据个数 和 连接查询的数据个数一致（都是3条数据），则有可能满足eq_ref级别；否则无法满足。
+
+  ​
+
+- ref：非唯一性索引，对于每个索引键的查询，返回匹配的所有行（0，多）
+
+  ```mysql
+  准备数据：
+   insert into teacher values(4,'tz',4) ;
+   insert into teacherCard values(4,'tz222');
+
+  测试：
+  alter table teacher add index index_name (tname) ;
+  explain select * from teacher 	where tname = 'tz';
+  ```
+
+- range：检索指定范围的行 ,where后面是一个范围查询(between   ,> < >=,     特殊:in有时候会失效 ，
+
+  从而转为 无索引all)
+
+  ```mysql
+  alter table teacher add index tid_index (tid) ;
+  explain select t.* from teacher t where t.tid in (1,2) ;
+  explain select t.* from teacher t where t.tid <3 ;
+  ```
+
+- index：查询全部索引中数据
+
+  `explain select tid from teacher ; --tid 是索引， 只需要扫描索引表，不需要所有表中的所有数据`
+
+- all：查询全部表中的数据
+
+  `explain select cid from course ;  --cid不是索引，需要全表所有，即需要所有表中的所有数据`
+
+**对于explain的字段类型小结：：**
+
+- system/const: 结果只有一条数据
+- eq_ref:结果多条；但是每条数据是唯一的 ；
+- ref：结果多条；但是每条数据是是0或多条 ；
+
+#### （6）possible_keys 主键
+
+> 可能用到的索引，是一种预测，不准。
+
+```mysql
+alter table  course add index cname_index (cname);
+
+explain select t.tname ,tc.tcdesc from teacher t,teacherCard tc
+ where t.tcid= tc.tcid
+and t.tid = (select c.tid from course c where cname = 'sql') ;
+```
+
+> 1. 如果 possible_key/key是NULL，则说明没用索引
+>
+>    ```mysql
+>    explain select tc.tcdesc from teacherCard tc,course c,teacher t where c.tid = t.tid
+>    and t.tcid = tc.tcid and c.cname = 'sql' ;
+>    ```
+
+#### （7）key
+
+> 实际使用到的索引
+
+#### （8）key_len ：索引的长度
+
+> 作用：用于判断复合索引是否被完全使用  （a,b,c）。
+>
+> ```mysql
+> create table test_kl
+> (
+> 	name char(20) not null default ''
+> );
+> alter table test_kl add index index_name(name) ;
+> explain select * from test_kl where name ='' ;   -- key_len :60
+> 在utf8：1个字符站3个字节  
+>
+> alter table test_kl add column name1 char(20) ;  --name1可以为null
+>
+> alter table test_kl add index index_name1(name1) ;
+> explain select * from test_kl where name1 ='' ; 
+> --如果索引字段可以为Null,则会使用1个字节用于标识。
+>
+> drop index index_name on test_kl ;
+> drop index index_name1 on test_kl ;
+>
+> 增加一个复合索引 
+> alter table test_kl add index name_name1_index (name,name1) ; 
+>
+> explain select * from test_kl where name1 = '' ; --121
+> explain select * from test_kl where name = '' ; --60
+>
+>
+> varchar(20)
+> alter table test_kl add column name2 varchar(20) ; --可以为Null 
+> alter table test_kl add index name2_index (name2) ;
+>
+> explain select * from test_kl where name2 = '' ;  --63  （数据的总字节数，即长度）
+> 20*3=60 +  1(null)  +2(用2个字节 标识可变长度)  =63
+> ```
+>
+> **注意：**
+>
+> - mysql表示varchar可变长度为2个字节  null标识1个字节 得到最终长度
+> - utf8:1个字符3个字节
+> - gbk:1个字符2个字节
+> - latin:1个字符1个字节
+
+#### （9）ref
+
+> ref : 注意与type中的ref值区分。
+> 作用： 指明当前表所 参照的 字段。
+>
+> `select ....where a.c = b.x ;(其中b.x可以是常量，const)`
+>
+> ```mysql
+> alter table course  add index tid_index (tid) ;
+>
+> explain select * from course c,teacher t where c.tid = t.tid  and t.tname ='tw' ;
+> ```
+
+#### （10）rows
+
+> 被索引优化查询的 数据个数 (实际通过索引而查询到的 数据个数)
+>
+> `explain select * from course c,teacher t  where c.tid = t.tid and t.tname = 'tz' ;`
+
+#### （11）Extra
+
+> 1. (i).using filesort ： 性能消耗大；需要“额外”的一次排序（查询）  。常见于 order by 语句中。
+>    排序：先查询
+>
+>    场景：10个人 根据年龄排序。
+>
+>    ```mysql
+>    create table test02
+>    (
+>    	a1 char(3),
+>    	a2 char(3),
+>    	a3 char(3),
+>    	index idx_a1(a1),
+>    	index idx_a2(a2),
+>    	index idx_a3(a3)
+>    );
+>
+>    explain select * from test02 where a1 ='' order by a1 ;
+>
+>    a1:姓名  a2：年龄
+>    explain select * from test02 where a1 ='' order by a2 ; --using filesort
+>    ```
+>
+>    **小结：**
+>
+>    - 对于单索引， 如果排序和查找是同一个字段，则不会出现using filesort；如果排序和查找不是同一个字段，则会出现using 
+>
+>    - filesort；
+>      	避免： where哪些字段，就order by那些字段2
+>
+>    - 复合索引：不能跨列（最佳左前缀） 
+>
+>      ```mysql
+>      drop index idx_a1 on test02;
+>      drop index idx_a2 on test02;
+>      drop index idx_a3 on test02;
+>
+>
+>      alter table test02 add index idx_a1_a2_a3 (a1,a2,a3) ;
+>      explain select *from test02 where a1='' order by a3 ;  --using filesort
+>      explain select *from test02 where a2='' order by a3 ; --using filesort
+>      explain select *from test02 where a1='' order by a2 ;
+>      explain select *from test02 where a2='' order by a1 ; --using filesort
+>      ```
+>
+>    **理解：**（a1,a2,a3） [a1,a2]不夸列   跨列：[a1,a3] || [a2,a3] 都属于跨列
+>
+>    **小结**：避免： where和order by 按照复合索引的顺序使用，不要跨列或无序使用。（我的理解：查什么就用什么排序）
+>
+> 2. using temporary:性能损耗大 ，用到了临时表。一般出现在group by 语句中
+>
+>    ```mysql
+>    explain select a1 from test02 where a1 in ('1','2','3') group by a1 ;
+>    explain select a1 from test02 where a1 in ('1','2','3') group by a2 ; --using temporary
+>    避免：查询那些列，就根据那些列 group by .（我的理解：查什么就用什么分组）
+>    ```
+>
+> 3. using index :性能提升; 索引覆盖（覆盖索引）。原因：不读取原文件，只从索引文件中获取数据 （不需要回表查询）只要使用到的列 全部都在索引中，就是索引覆盖using index
+>
+>    举例：test02表中有一个复合索引(a1,a2,a3)
+>
+>    ```mysql
+>    explain select a1,a2 from test02 where a1='' or a2= '' ; --using index   		
+>    drop index idx_a1_a2_a3 on test02;
+>
+>    alter table test02 add index idx_a1_a2(a1,a2) ;
+>    explain select a1,a3 from test02 where a1='' or a3= '' ;
+>    ```
+>
+>    - 如果用到了索引覆盖(using index时)，会对 possible_keys和key造成影响：
+>
+>       a.如果没有where，则索引只出现在key中；
+>
+>       b.如果有where，则索引 出现在key和possible_keys中。
+>
+>      ```mysql
+>      explain select a1,a2 from test02 where a1='' or a2= '' ;
+>      explain select a1,a2 from test02  ;
+>      ```
+>
+> 4. using where （需要回表查询）
+>
+>    假设age是索引列
+>    但查询语句select age,name from ...where age =...,此语句中必须回原表查Name，因此会显示using where.
+>
+>    ```mysql
+>    explain select a1,a3 from test02 where a3 = '' ; --a3需要回原表查询
+>    	
+>    我的理解：先去索引中查，如果需要查索引中没有的字段则必须回表查询，即所谓的回表查询。
+>    ```
+>
+> 5.  impossible where ： where子句永远为false
+>
+>    `explain select * from test02 where a1='x' and a1='y'  ;`
+
+### 6 . 优化案例
 
 * 单表优化
 * 两表优化
@@ -905,7 +1568,7 @@ update linelock set name='ax' where id = 5;
 
 - 如果之前计算机中安装过Mysql，要重新再安装  则需要：先卸载 再安装
 
-- 先卸载：		
+	 先卸载：		
 
   ​      1,通过电脑自带卸载工具卸载Mysql (电脑管家也可以)		
 
@@ -1036,7 +1699,7 @@ start slave ;
 
 
 
-
+视频地址：https://www.bilibili.com/watchlater/#/av29072634/p9
 
 
 
